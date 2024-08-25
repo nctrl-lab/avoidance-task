@@ -124,18 +124,18 @@ class MainWindow(QMainWindow):
         self.start_btn.setCheckable(True)
         self.start_btn.setEnabled(False)
         self.start_btn.toggled.connect(self.start)
-        self.start_btn.setMinimumSize(150, 75)
+        self.start_btn.setMinimumSize(150, 40)
 
         self.laser_btn = QPushButton("Laser")
         self.laser_btn.setCheckable(True)
         self.laser_btn.setEnabled(False)
         self.laser_btn.clicked.connect(self.laser)
-        self.laser_btn.setMinimumSize(150, 50)
+        self.laser_btn.setMinimumSize(150, 30)
 
         self.punishment_btn = QPushButton("Punishment")
         self.punishment_btn.setEnabled(False)
         self.punishment_btn.clicked.connect(self.punishment)
-        self.punishment_btn.setMinimumSize(150, 50)
+        self.punishment_btn.setMinimumSize(150, 20)
         self.debug = QCheckBox('Debug mode')
 
         layout_serial = QHBoxLayout()
@@ -144,7 +144,7 @@ class MainWindow(QMainWindow):
         self.serial_btn = QPushButton("Connect")
         self.serial_btn.setCheckable(True)
         self.serial_btn.toggled.connect(self.serial_start)
-        self.serial_btn.setMinimumSize(150, 75)
+        self.serial_btn.setMinimumSize(150, 40)
 
         layout_serial.addWidget(QLabel("Serial port"))
         layout_serial.addWidget(self.serial_port)

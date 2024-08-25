@@ -2,7 +2,7 @@
 // === teensy code for avoidance task ===
 // === by Dohoung Kim                 ===
 // === since 23 May, 2024             ===
-// === last edited: 13 Aug, 2024      ===
+// === last edited: 25 Aug, 2024      ===
 // ======================================
 
 
@@ -29,6 +29,7 @@
     AudioControlSGTL5000 audioShield;
 #endif
 
+
 // =========================
 // === 2. Pin definition ===
 // =========================
@@ -38,14 +39,19 @@
 //   1: Encoder A
 //   2: Encoder B
 //   3: Sound for NI 
-//   4: Air (solenoid)
-//   5: Punishment for NI
+//   4: Air
+//   5: Water
 //  14: Laser pin
-//  15: Laser pin
 
 // Audio shield related (do not use)
+//   6: MEMCS
 //   7: Audio DIN
 //   8: Audio DOUT
+//  10: SDCS
+//  11: MOSI
+//  12: MISO
+//  13: SCK
+//  15: Vol
 //  18: Audio SDA
 //  19: Audio SCL
 //  20: Audio LRCLK
@@ -57,19 +63,21 @@
 #define ENCB            2
 #define SOUND           3
 #define AIR             4
-#define PUNISHMENT      5
-#define LASER1          14
-#define LASER2          15
+#define WATER           5
+#define LASER           14
 
-#define syncOn()        {digitalWriteFast(SYNC, HIGH);digitalWriteFast(13, HIGH);}
-#define syncOff()       {digitalWriteFast(SYNC, LOW);digitalWriteFast(13, LOW);}
-#define soundOn()         {mixer1.gain(0, 1.0);digitalWriteFast(SOUND, HIGH);}
+#define syncOn()        digitalWriteFast(SYNC, HIGH);
+#define syncOff()       digitalWriteFast(SYNC, LOW);
+#define soundOn()       {mixer1.gain(0, 1.0);digitalWriteFast(SOUND, HIGH);}
 #define soundOff()      {mixer1.gain(0, 0.0);digitalWriteFast(SOUND, LOW);}
 #define punishmentOn()  digitalWriteFast(AIR, HIGH);
 #define punishmentOff() digitalWriteFast(AIR, LOW);
-#define laserOn()       {digitalWriteFast(LASER1, HIGH);digitalWriteFast(LASER2, HIGH);}
-#define laserOff()      {digitalWriteFast(LASER1, LOW);digitalWriteFast(LASER2, LOW);}
-#define allOff()        {digitalWriteFast(SYNC, LOW);digitalWriteFast(AIR,LOW);digitalWriteFast(SOUND, LOW);mixer1.gain(0, 0.0);}
+#define rewardOn()      digitalWriteFast(WATER, HIGH);
+#define rewardOff()     digitalWriteFast(WATER, LOW);
+#define laserOn()       digitalWriteFast(LASER, HIGH);
+#define laserOff()      digitalWriteFast(LASER, LOW);
+#define allOff()        {digitalWriteFast(SYNC, LOW);digitalWriteFast(AIR,LOW);digitalWriteFast(WATER,LOW);digitalWriteFast(SOUND, LOW);digitalWriteFast(LASER,LOW);mixer1.gain(0, 0.0);}
+
 
 // =========================
 // === 3. Task variables ===
@@ -79,7 +87,7 @@ unsigned long now;
 // sync pulse
 bool syncState = false;
 unsigned long syncTime;
-const unsigned long syncInterval = 1000000; // 1 second
+const unsigned long SYNC_INTERVAL = 1000000; // 1 second
 
 // trial state-related
 #define TRIALSTART 0 // cue play
@@ -90,8 +98,10 @@ int state = STANDBY;
 
 int nTrial = 200;
 
-
-// intertrial interval (20 - 80 seconds)
+// intertrial interval
+// min interval: 20 seconds
+// mean interval: MIN + 20 seconds = 40 seconds
+// max interval: MIN + 3 * MEAN seconds = 80 seconds
 unsigned long itiTime, itiDuration;
 const unsigned long ITI_MIN = 20000000 ; // 20 seconds
 const unsigned long ITI_MEAN = 20000000; // 20 seconds
@@ -99,43 +109,62 @@ const unsigned long ITI_MEAN = 20000000; // 20 seconds
 // position-related
 // report animal's position at 100 Hz
 unsigned long positionTime;
-const unsigned long positionInterval = 10000;
+const unsigned long POSITION_INTERVAL = 10000;
 
 // 20 cm diameter, 512 ppr
 // 512 pulse/round / (3.141592 * 20 cm/round) * 10 cm = 81.487 pulses/10 cm
 int32_t previousTarget = 0;
 const int32_t N_PULSE_PER_10CM = 82;
-int32_t TARGET_ZONE_LENGTH = 4 * N_PULSE_PER_10CM ; // 40 cm
+int32_t targetZoneLength = 4 * N_PULSE_PER_10CM ; // 40 cm
+
+// speed-related
+// 10 cm/s = 82 pulses/s
+int32_t speed = 0;
+int iSpeed = 0;
+int32_t speedThreshold = (int32_t)(N_PULSE_PER_10CM / 2); // 41 pulses/s
+int32_t ys[10];
+int iY = 0;
+bool isMoving = false;
 
 // cue duration
 unsigned long cueTime;
-const unsigned long cueDuration = 10000000; // 10 seconds
+unsigned long cueDuration = 10000000; // 10 seconds
+
+// reward
+#define REWARD_DISABLED 0
+#define REWARD_ENABLED  1
+#define REWARD_ON       2
+uint16_t rewardState = REWARD_DISABLED;
+
+unsigned long rewardTime, rewardInterval;
+unsigned long rewardDuration = 80000; // This decides the reward amount
+const unsigned long REWARD_INTERVAL_MIN = 10000000; // 10 seconds
+const unsigned long REWARD_INTERVAL_MEAN = 10000000; // 10 seconds
 
 // punishment
-#define PUNISHSTANDBY 0
-#define PUNISHON      1
-#define PUNISHOFF     2
-uint16_t punishmentState = PUNISHSTANDBY;
+#define PUNISH_STANDBY 0
+#define PUNISH_ON      1
+#define PUNISH_OFF     2
+uint16_t punishmentState = PUNISH_STANDBY;
 
 unsigned long punishmentTime, punishmentStart;
-const unsigned long punishmentPulse = 200000;
-const unsigned long punishmentInterval = 300000;
-const unsigned long punishmentDuration = 15000000;
+const unsigned long PUNISHMENT_PULSE = 200000;
+const unsigned long PUNISHMENT_INTERVAL = 300000;
+const unsigned long PUNISHMENT_DURATION = 15000000;
 
 // laser
-#define LASERDONE 0     // Idle state, waiting for trigger
-#define LASERON 1       // Laser is currently on
-#define LASEROFF 2      // Laser is off, waiting for next pulse
-int laserState = LASERDONE;  // Current state
+#define LASER_DONE 0     // Idle state, waiting for trigger
+#define LASER_ON 1       // Laser is currently on
+#define LASER_OFF 2      // Laser is off, waiting for next pulse
+int laserState = LASER_DONE;  // Current state
 
-const unsigned long laserDuration = 5000;           // Duration of each laser pulse (5 ms)
-const unsigned long laserIntervalMin = 1000000;     // Minimum inter-pulse interval (1 s)
-const unsigned long laserIntervalMean = 1000000;    // Mean inter-pulse interval (1 s)
-const unsigned long laserIntervalMax = 4000000;     // Maximum inter-pulse interval (4 s)
+const unsigned long LASER_DURATION = 5000;           // Duration of each laser pulse (5 ms)
+const unsigned long LASER_INTERVAL_MIN = 1000000;     // Minimum inter-pulse interval (1 s)
+const unsigned long LASER_INTERVAL_MEAN = 1000000;    // Mean inter-pulse interval (1 s)
 unsigned long laserInterval;                        // Current inter-pulse interval (set dynamically)
 unsigned long laserTime;
 
-const int nPulse = 150;  // Total number of pulses in a sequence
+int N_PULSE = 150;  // Total number of pulses in a sequence
 int iPulse = 0;          // Current pulse count
 
 // packet related
@@ -158,30 +187,10 @@ struct vrinfo
 
 bool debug = false;
 
+
 // =======================================
 // === 4.1 Task                        ===
 // =======================================
-
-void checkTreadmill()
-{
-    if (now - positionTime >= positionInterval)
-    {
-        vrlog.time = now;
-        positionTime = now;
-        sendVR = 1;
-    }
-}
-
-void checkPosition() // run by interrupt
-{
-    // reading encoder
-    if (digitalReadFast(ENCA) != digitalReadFast(ENCB))
-        vrlog.y++;
-    else
-        vrlog.y--;
-  
-}
-
 void checkTask()
 {
     ////////////////////////////////////
@@ -206,19 +215,19 @@ void checkTask()
         }
 
         // moved
-        if (vrlog.y - previousTarget >= TARGET_ZONE_LENGTH) {
+        if (vrlog.y - previousTarget >= targetZoneLength) {
             itiTrial(1); // successful trial
         }
     }
 
     else if (state == TRIALEND) {
         // didn't move at all!!
-        if (now - cueTime >= cueDuration + punishmentDuration) {
+        if (now - cueTime >= cueDuration + PUNISHMENT_DURATION) {
             itiTrial(0);
         }
         
         // (finally) moved
-        if (vrlog.y - previousTarget >= TARGET_ZONE_LENGTH) {
+        if (vrlog.y - previousTarget >= targetZoneLength) {
             itiTrial(0); // failed trial
         }
     }
@@ -267,6 +276,7 @@ void itiTrial(int success)
     state = ITI;
     soundOff();
     punishment(0);
+    stopReward();
     if (triallog.iTrial == 0)
         itiDuration = 5000000; // 5 second
     else
@@ -291,27 +301,6 @@ void finishTrial()
     state = STANDBY;
     allOff();
     packetCOM(99);
-}
-
-void punishment(int on)
-{
-    if (on == 1) {
-        if (debug)
-            Serial.println("punishment(1)");
-        punishmentOn();
-        digitalWriteFast(PUNISHMENT, HIGH);
-
-        punishmentState = PUNISHON;
-        punishmentTime = now;
-        punishmentStart = now;
-    }
-    else {
-        if (debug)
-            Serial.println("punishment(0)");
-        punishmentOff();
-        digitalWriteFast(PUNISHMENT, LOW);
-        punishmentState = PUNISHSTANDBY;
-    }
 }
 
 void resetTrial()
@@ -354,12 +343,112 @@ void initTrial()
     nTrial = 200;
 }
 
+// =====================================
+// === 4.3 Position-related function ===
+// =====================================
+void checkTreadmill()
+{
+    if (now - positionTime >= POSITION_INTERVAL)
+    {
+        vrlog.time = now;
+        positionTime = now;
+        sendVR = 1;
+
+        // check speed per 0.1 second and average speed per second
+        if (iSpeed == 0) {
+            checkSpeed();
+        }
+        iSpeed++;
+        if (iSpeed == 10) {
+            iSpeed = 0;
+        }
+    }
+}
+
+void checkSpeed() {
+    // idx:   0  1  2  3  4  5  6  7  8  9
+    // pre: -10 -9 -8 -7 -6 -5 -4 -3 -2 -1
+    speed = vrlog.y - ys[iY];
+    ys[iY] = vrlog.y;
+    iY++;
+    if (iY == 10) {
+        iY = 0;
+    }
+
+    if (speed >= speedThreshold) {
+        if (!isMoving) {
+            isMoving = true;
+            stopReward();
+        }
+    }
+    else {
+        if (isMoving) {
+            isMoving = false;
+            nextReward();
+        }
+    }
+}
+
+void checkPosition() // run by interrupt
+{
+    // reading encoder
+    if (digitalReadFast(ENCA) != digitalReadFast(ENCB))
+        vrlog.y++;
+    else
+        vrlog.y--;
+}
 
 
+// ===================================
+// === 4.4 Reward-related function ===
+// ===================================
+void nextReward() {
+    rewardOff();
+    rewardState = REWARD_ENABLED;
+    rewardTime = now;
+    rewardInterval = -logf(((float)random(500, 10001)/10000)) * REWARD_INTERVAL_MEAN + REWARD_INTERVAL_MIN;
+}
 
-// =================================
-// === 4.3 BCS-COM communication ===
-// =================================
+void startReward() {
+    rewardState = REWARD_ON;
+    rewardTime = now;
+    rewardOn();
+}
+
+void stopReward() {
+    rewardOff();
+    rewardState = REWARD_DISABLED;
+}
+
+
+// =======================================
+// === 4.5 Punishment-related function ===
+// =======================================
+void punishment(int on)
+{
+    if (on == 1) {
+        if (debug)
+            Serial.println("punishment(1)");
+        punishmentOn();
+        digitalWriteFast(PUNISHMENT, HIGH);
+
+        punishmentState = PUNISHON;
+        punishmentTime = now;
+        punishmentStart = now;
+    }
+    else {
+        if (debug)
+            Serial.println("punishment(0)");
+        punishmentOff();
+        digitalWriteFast(PUNISHMENT, LOW);
+        punishmentState = PUNISHSTANDBY;
+    }
+}
+
+
+// ================================
+// === 5. BCS-COM communication ===
+// ================================
 void checkCOM()
 {
     if (Serial.available() > 0) // 175 ns
@@ -396,9 +485,40 @@ void checkCOM()
             }
             else if (cCOM == 'p') // give punishment
             {
-                if (debug)
-                    Serial.println("Giving punishment");
+                Serial.println("Testing punishment");
                 punishment(1);
+            }
+            else if (cCOM == 'P') // stop punishment
+            {
+                Serial.println("Stopping punishment");
+                punishment(0);
+            }
+            else if (cCOM == 'r') // reward
+            {
+                Serial.println("Testing reward");
+                startReward();
+            }
+            else if (cCOM == 'w') // setting reward duration
+            {
+                rewardDuration = Serial.parseInt() * 1000;
+                if (rewardDuration <= 0)
+                    rewardDuration = 80000;
+                Serial.print("Reward duration: ");
+                Serial.print(rewardDuration);
+                Serial.println(" microseconds");
+            }
+            else if (cCOM == 'l') {
+                laserState = LASERON;
+                laserOn();
+                laserTime = now;
+                iPulse = 0;
+                sendLaser = 2;
+            }
+            else if (cCOM == 'L' || cCOM == 'f') {
+                laserState = LASERDONE;
+                laserOff();
+                laserTime = now;
+                sendLaser = 10;
             }
             else if (cCOM == 'd') // debug mode
             {
@@ -415,23 +535,15 @@ void checkCOM()
                 Serial.println("s: start trial");
                 Serial.println("n: set trial number");
                 Serial.println("p: give punishment (for 15 seconds)");
+                Serial.println("P: stop punishment");
+                Serial.println("r: reward");
+                Serial.println("w: set reward duration");
                 Serial.println("d: debug mode");
-                Serial.println("D: turn of debug mode");
+                Serial.println("D: turn off debug mode");
+                Serial.println("l: laser on");
+                Serial.println("L: laser off");
                 Serial.println("e: finish trial");
                 Serial.println("f: force stop\n\n");
-            }
-            else if (cCOM == 'l') {
-                laserState = LASERON;
-                laserOn();
-                laserTime = now;
-                iPulse = 0;
-                sendLaser = 2;
-            }
-            else if (cCOM == 'L' || cCOM == 'f') {
-                laserState = LASERDONE;
-                laserOff();
-                laserTime = now;
-                sendLaser = 10;
             }
         }
         else {
@@ -446,7 +558,6 @@ void checkCOM()
         }
     }
 }
-
 
 void sendCOM()
 {
@@ -530,14 +641,14 @@ void packetCOM(uint8_t command)
 }
 
 
-// ======================
-// === 4.4 Sync check ===
-// ======================
+// =================
+// === 6. Timers ===
+// =================
 // checkSync: check sync time and generate pulse
 // sync pulse will be 0.5 Hz
 void checkSync()
 {
-    if (now - syncTime >= syncInterval) // This is immune to overflow.
+    if (now - syncTime >= SYNC_INTERVAL) // This is immune to overflow.
     {
         if (syncState) {
             syncOff();
@@ -555,50 +666,71 @@ void checkSync()
     }
 }
 
-
 void checkTimer() {
-    if (punishmentState == PUNISHON) {
-    	if (now - punishmentStart >= punishmentDuration) {
-    	      punishmentState = PUNISHSTANDBY;
+    // punishment
+    if (punishmentState == PUNISH_ON) {
+    	if (now - punishmentStart >= PUNISHMENT_DURATION) {
+    	      punishmentState = PUNISH_STANDBY;
             punishmentOff();
             digitalWriteFast(PUNISHMENT, LOW);
             if (debug)
                 Serial.println("Punishment finished");
     	}
-        else if (now - punishmentTime >= punishmentPulse) {
-            punishmentState = PUNISHOFF;
+        else if (now - punishmentTime >= PUNISHMENT_PULSE) {
+            punishmentState = PUNISH_OFF;
             punishmentTime = now;
             punishmentOff();
         }
     }
-    else if (punishmentState == PUNISHOFF) {
-        if (now - punishmentTime >= punishmentInterval) {
-            punishmentState = PUNISHON;
+    else if (punishmentState == PUNISH_OFF) {
+        if (now - punishmentTime >= PUNISHMENT_INTERVAL) {
+            punishmentState = PUNISH_ON;
             punishmentTime = now;
             punishmentOn();
+        }
+    }
+
+    // reward
+    if (rewardState == REWARD_ENABLED) {
+        if (now - rewardTime >= rewardInterval) {
+            if (debug)
+                Serial.println("Rewarding");
+            startReward();
+        }
+    }
+    else if (rewardState == REWARD_ON) {
+        if (now - rewardTime >= rewardDuration) {
+            if (debug)
+                Serial.println("Reward finished");
+            if (state == STANDBY) {
+                stopReward();
+            }
+            else {
+                nextReward();
+            }
         }
     }
 }
 
 void checkLaser() {
-    if (laserState == LASERON) {
-        if (now - laserTime >= laserDuration) {
-            laserState = LASEROFF;
+    if (laserState == LASER_ON) {
+        if (now - laserTime >= LASER_DURATION) {
+            laserState = LASER_OFF;
             laserTime = now;
             laserOff();
             iPulse++;
-            if (iPulse >= nPulse) {
+            if (iPulse >= N_PULSE) {
                 sendLaser = 10;
-                laserState = LASERDONE;
+                laserState = LASER_DONE;
             } else {
                 sendLaser = 1;
-                nextDelay();  // Set next inter-pulse interval
+                laserInterval = -logf(((float)random(500, 10001)/10000)) * LASER_INTERVAL_MEAN + LASER_INTERVAL_MIN;
             }
         }
     }
-    else if (laserState == LASEROFF) {
+    else if (laserState == LASER_OFF) {
         if (now - laserTime >= laserInterval) {
-            laserState = LASERON;
+            laserState = LASER_ON;
             laserTime = now;
             laserOn();
             sendLaser = 2;
@@ -606,20 +738,9 @@ void checkLaser() {
     }
 }
 
-// Calculate next pseudo-random inter-pulse interval
-void nextDelay() {
-    float u = random(0, 1000000) / 1000000.0;  // Random float between 0 and 1
-    // Use inverse transform sampling to generate exponential distribution
-    laserInterval = constrain(
-        (unsigned long)(-log(1 - u) * laserIntervalMean) + laserIntervalMin,
-        laserIntervalMin,
-        laserIntervalMax
-    );
-}
-
 
 // =====================
-// === 5. Initiation ===
+// === 7. Initiation ===
 // =====================
 
 void setup()
@@ -627,15 +748,13 @@ void setup()
     Serial.begin(2000000);
 
     pinMode(SYNC, OUTPUT);
-    
-    pinMode(AIR, OUTPUT);
-    pinMode(PUNISHMENT, OUTPUT);
-    pinMode(SOUND, OUTPUT);
-    pinMode(LASER1, OUTPUT);
-    pinMode(LASER2, OUTPUT);
-
     pinMode(ENCA, INPUT_PULLUP);
     pinMode(ENCB, INPUT_PULLUP);
+    pinMode(SOUND, OUTPUT);
+    pinMode(AIR, OUTPUT);
+    pinMode(WATER, OUTPUT);
+    pinMode(LASER, OUTPUT);
+
     attachInterrupt(ENCA, checkPosition, RISING);
 
     #ifdef USE_AUDIO
@@ -653,7 +772,7 @@ void setup()
 
 
 // ====================
-// === 6. Main loop ===
+// === 8. Main loop ===
 // ====================
 
 void loop()
@@ -667,8 +786,9 @@ void loop()
         checkSync();
         sendCOM();
     }
-    
+    else {
+        checkLaser();
+    }
     checkTimer();
-    checkLaser();
     checkCOM();
 }
