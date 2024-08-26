@@ -2,7 +2,7 @@
 // === teensy code for avoidance task ===
 // === by Dohoung Kim                 ===
 // === since 23 May, 2024             ===
-// === last edited: 25 Aug, 2024      ===
+// === last edited: 26 Aug, 2024      ===
 // ======================================
 
 
@@ -82,6 +82,10 @@
 // =========================
 // === 3. Task variables ===
 // =========================
+
+// *** Please carefully review the variables and modify them if necessary. ***
+
+
 unsigned long now;
 
 // sync pulse
@@ -95,16 +99,15 @@ const unsigned long SYNC_INTERVAL = 1000000; // 1 second
 #define ITI 2
 #define STANDBY 9
 int state = STANDBY;
-
 int nTrial = 200;
 
 // intertrial interval
 // min interval: 20 seconds
-// mean interval: MIN + 20 seconds = 40 seconds
-// max interval: MIN + 3 * MEAN seconds = 80 seconds
+// mean interval: 40 seconds
+// max interval: MIN + 3 * (MEAN - MIN) = 80 seconds
 unsigned long itiTime, itiDuration;
 const unsigned long ITI_MIN = 20000000 ; // 20 seconds
-const unsigned long ITI_MEAN = 20000000; // 20 seconds
+const unsigned long ITI_MEAN = 40000000; // 40 seconds
 
 // position-related
 // report animal's position at 100 Hz
@@ -128,7 +131,7 @@ bool isMoving = false;
 
 // cue duration
 unsigned long cueTime;
-unsigned long cueDuration = 10000000; // 10 seconds
+unsigned long cueDuration = 5000000; // 5 seconds
 
 // reward
 #define REWARD_DISABLED 0
@@ -138,8 +141,8 @@ uint16_t rewardState = REWARD_DISABLED;
 
 unsigned long rewardTime, rewardInterval;
 unsigned long rewardDuration = 80000; // This decides the reward amount
-const unsigned long REWARD_INTERVAL_MIN = 10000000; // 10 seconds
-const unsigned long REWARD_INTERVAL_MEAN = 10000000; // 10 seconds
+const unsigned long REWARD_INTERVAL_MIN = 5000000; // 5 seconds
+const unsigned long REWARD_INTERVAL_MEAN = 15000000; // 15 seconds
 
 // punishment
 #define PUNISH_STANDBY 0
@@ -149,8 +152,8 @@ uint16_t punishmentState = PUNISH_STANDBY;
 
 unsigned long punishmentTime, punishmentStart;
 const unsigned long PUNISHMENT_PULSE = 200000;
- unsigned long PUNISHMENT_INTERVAL = 300000;
-const unsigned long PUNISHMENT_DURATION = 15000000;
+const unsigned long PUNISHMENT_INTERVAL = 300000;
+const unsigned long PUNISHMENT_DURATION = 5000000; // 5 seconds
 
 // laser
 #define LASER_DONE 0     // Idle state, waiting for trigger
@@ -158,13 +161,13 @@ const unsigned long PUNISHMENT_DURATION = 15000000;
 #define LASER_OFF 2      // Laser is off, waiting for next pulse
 int laserState = LASER_DONE;  // Current state
 
-const unsigned long LASER_DURATION = 5000;           // Duration of each laser pulse (5 ms)
-const unsigned long LASER_INTERVAL_MIN = 1000000;     // Minimum inter-pulse interval (1 s)
+const unsigned long LASER_DURATION = 5000;            // Duration of each laser pulse (5 ms)
+const unsigned long LASER_INTERVAL_MIN = 500000;      // Minimum inter-pulse interval (0.5 s)
 const unsigned long LASER_INTERVAL_MEAN = 1000000;    // Mean inter-pulse interval (1 s)
-unsigned long laserInterval;                        // Current inter-pulse interval (set dynamically)
+unsigned long laserInterval;                          // Current inter-pulse interval (set dynamically)
 unsigned long laserTime;
 
-int N_PULSE = 150;  // Total number of pulses in a sequence
+int N_PULSE = 300;       // Total number of pulses in a sequence
 int iPulse = 0;          // Current pulse count
 
 // packet related
@@ -262,6 +265,7 @@ void endTrial()
         Serial.println("endTrial");
 
     state = TRIALEND;
+    soundOff();
     punishment(1);
     triallog.time = now;
     sendTrial = 2;
@@ -280,7 +284,7 @@ void itiTrial(int success)
     if (triallog.iTrial == 0)
         itiDuration = 5000000; // 5 second
     else
-        itiDuration = -logf(((float)random(500, 10001)/10000)) * ITI_MEAN + ITI_MIN;
+        itiDuration = getInterval(ITI_MIN, ITI_MEAN);
 
     Serial.print("itiDuration: ");
     Serial.println(itiDuration);
@@ -318,11 +322,21 @@ void resetTrial()
     positionTime = now;
     previousTarget = 0;
 
+    speed = 0;
+    iSpeed = 0;
+    iY = 0;
+    isMoving = true;
+
     cueTime = now;
+
+    rewardState = REWARD_DISABLED;
 
     punishmentState = PUNISH_STANDBY;
     punishmentTime = now;
     punishmentStart = now;
+
+    laserState = LASER_DONE;
+    iPulse = N_PULSE; // make sure it doesn't trigger
 
     triallog.time = now;
     triallog.iTrial = 0;
@@ -333,6 +347,8 @@ void resetTrial()
     sendVR = 0;
     sendSync = 0;
     sendTrial = 0;
+    sendLaser = 0;
+
 }
 
 void initTrial()
@@ -416,7 +432,7 @@ void nextReward() {
     rewardOff();
     rewardState = REWARD_ENABLED;
     rewardTime = now;
-    rewardInterval = -logf(((float)random(500, 10001)/10000)) * REWARD_INTERVAL_MEAN + REWARD_INTERVAL_MIN;
+    rewardInterval = getInterval(REWARD_INTERVAL_MIN, REWARD_INTERVAL_MEAN);
 
     if (debug) {
         Serial.print("Reward interval: ");
@@ -436,6 +452,7 @@ void startReward() {
 
 void stopReward() {
     rewardOff();
+    isMoving = true;
     rewardState = REWARD_DISABLED;
 
     if (debug) {
@@ -720,15 +737,11 @@ void checkTimer() {
     // reward
     if (rewardState == REWARD_ENABLED) {
         if (now - rewardTime >= rewardInterval) {
-            if (debug)
-                Serial.println("Rewarding");
             startReward();
         }
     }
     else if (rewardState == REWARD_ON) {
         if (now - rewardTime >= rewardDuration) {
-            if (debug)
-                Serial.println("Reward finished");
             if (state == STANDBY) {
                 stopReward();
             }
@@ -751,7 +764,7 @@ void checkLaser() {
                 laserState = LASER_DONE;
             } else {
                 sendLaser = 1;
-                laserInterval = -logf(((float)random(500, 10001)/10000)) * LASER_INTERVAL_MEAN + LASER_INTERVAL_MIN;
+                laserInterval = getInterval(LASER_INTERVAL_MIN, LASER_INTERVAL_MEAN);
             }
         }
     }
@@ -763,6 +776,10 @@ void checkLaser() {
             sendLaser = 2;
         }
     }
+}
+
+unsigned long getInterval(unsigned long interval_min, unsigned long interval_mean) {
+    return -logf(((float)random(500, 10001)/10000)) * (interval_mean - interval_min) + interval_min;
 }
 
 
