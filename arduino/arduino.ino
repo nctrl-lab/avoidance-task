@@ -149,7 +149,7 @@ uint16_t punishmentState = PUNISH_STANDBY;
 
 unsigned long punishmentTime, punishmentStart;
 const unsigned long PUNISHMENT_PULSE = 200000;
-const unsigned long PUNISHMENT_INTERVAL = 300000;
+ unsigned long PUNISHMENT_INTERVAL = 300000;
 const unsigned long PUNISHMENT_DURATION = 15000000;
 
 // laser
@@ -320,7 +320,7 @@ void resetTrial()
 
     cueTime = now;
 
-    punishmentState = PUNISHSTANDBY;
+    punishmentState = PUNISH_STANDBY;
     punishmentTime = now;
     punishmentStart = now;
 
@@ -352,11 +352,14 @@ void checkTreadmill()
     {
         vrlog.time = now;
         positionTime = now;
-        sendVR = 1;
+
+        if (!debug)
+            sendVR = 1;
 
         // check speed per 0.1 second and average speed per second
         if (iSpeed == 0) {
             checkSpeed();
+            sendVR = 1;
         }
         iSpeed++;
         if (iSpeed == 10) {
@@ -367,7 +370,7 @@ void checkTreadmill()
 
 void checkSpeed() {
     // idx:   0  1  2  3  4  5  6  7  8  9
-    // pre: -10 -9 -8 -7 -6 -5 -4 -3 -2 -1
+    // pos: -10 -9 -8 -7 -6 -5 -4 -3 -2 -1
     speed = vrlog.y - ys[iY];
     ys[iY] = vrlog.y;
     iY++;
@@ -379,12 +382,19 @@ void checkSpeed() {
         if (!isMoving) {
             isMoving = true;
             stopReward();
+            if (debug) {
+                Serial.print("Animals is moving, speed: ");
+                Serial.println(speed);
+            }
         }
     }
     else {
         if (isMoving) {
             isMoving = false;
             nextReward();
+            if (debug) {
+                Serial.println("Animals stopped moving. Start rewarding...");
+            }
         }
     }
 }
@@ -407,17 +417,30 @@ void nextReward() {
     rewardState = REWARD_ENABLED;
     rewardTime = now;
     rewardInterval = -logf(((float)random(500, 10001)/10000)) * REWARD_INTERVAL_MEAN + REWARD_INTERVAL_MIN;
+
+    if (debug) {
+        Serial.print("Reward interval: ");
+        Serial.println(rewardInterval);
+    }
 }
 
 void startReward() {
     rewardState = REWARD_ON;
     rewardTime = now;
     rewardOn();
+
+    if (debug) {
+        Serial.println("Rewarding");
+    }
 }
 
 void stopReward() {
     rewardOff();
     rewardState = REWARD_DISABLED;
+
+    if (debug) {
+        Serial.println("Reward disabled");
+    }
 }
 
 
@@ -430,9 +453,7 @@ void punishment(int on)
         if (debug)
             Serial.println("punishment(1)");
         punishmentOn();
-        digitalWriteFast(PUNISHMENT, HIGH);
-
-        punishmentState = PUNISHON;
+        punishmentState = PUNISH_ON;
         punishmentTime = now;
         punishmentStart = now;
     }
@@ -440,8 +461,7 @@ void punishment(int on)
         if (debug)
             Serial.println("punishment(0)");
         punishmentOff();
-        digitalWriteFast(PUNISHMENT, LOW);
-        punishmentState = PUNISHSTANDBY;
+        punishmentState = PUNISH_STANDBY;
     }
 }
 
@@ -508,14 +528,14 @@ void checkCOM()
                 Serial.println(" microseconds");
             }
             else if (cCOM == 'l') {
-                laserState = LASERON;
+                laserState = LASER_ON;
                 laserOn();
                 laserTime = now;
                 iPulse = 0;
                 sendLaser = 2;
             }
             else if (cCOM == 'L' || cCOM == 'f') {
-                laserState = LASERDONE;
+                laserState = LASER_DONE;
                 laserOff();
                 laserTime = now;
                 sendLaser = 10;
@@ -532,18 +552,21 @@ void checkCOM()
             }
             else if (cCOM == 'h' || cCOM == '?') {
                 Serial.println("\n\n=============== Help =============");
-                Serial.println("s: start trial");
-                Serial.println("n: set trial number");
-                Serial.println("p: give punishment (for 15 seconds)");
-                Serial.println("P: stop punishment");
-                Serial.println("r: reward");
-                Serial.println("w: set reward duration");
-                Serial.println("d: debug mode");
-                Serial.println("D: turn off debug mode");
-                Serial.println("l: laser on");
-                Serial.println("L: laser off");
-                Serial.println("e: finish trial");
-                Serial.println("f: force stop\n\n");
+                Serial.println("Task related:");
+                Serial.println("  s: Start trial");
+                Serial.println("  n: Set trial number");
+                Serial.println("  e: Finish trial");
+                Serial.println("  f: Force stop");
+                Serial.println("\nComponent related:");
+                Serial.println("  p: Give punishment (15 seconds)");
+                Serial.println("  P: Stop punishment");
+                Serial.println("\n  r: Give reward");
+                Serial.println("  w: Set reward duration in ms (e.g. w58");
+                Serial.println("\n  l: Turn laser on");
+                Serial.println("  L: Turn laser off");
+                Serial.println("\n  d: Enable debug mode");
+                Serial.println("  D: Disable debug mode");
+                Serial.println("=====================================");
             }
         }
         else {
@@ -592,16 +615,19 @@ void packetCOM(uint8_t command)
     if (debug) {        
         if (command < 40)
         {
-            //Serial.print(" vrlog.time:");
-            //Serial.print(vrlog.time);
-            //Serial.print(",y:");
-            //Serial.println(vrlog.y);
+            // Serial.print(command);
+            // Serial.print(" vrlog.time:");
+            // Serial.print(vrlog.time);
+            // Serial.print(",y:");
+            // Serial.print(vrlog.y);
+            // Serial.print(",speed: ");
+            // Serial.println(speed);
         }
         else if (command < 50)
         {
-            Serial.print(command);
-            Serial.print(" syncTime:");
-            Serial.println(syncTime);
+            //Serial.print(command);
+            //Serial.print(" syncTime:");
+            //Serial.println(syncTime);
         }
         else if (command < 70)
         {
@@ -614,7 +640,9 @@ void packetCOM(uint8_t command)
         else if (command < 80) {
             Serial.print(command);
             Serial.print(" laserTime:");
-            Serial.println(laserTime);
+            Serial.print(laserTime);
+            Serial.print(",iPulse:");
+            Serial.println(iPulse);
         }
     }
     else {
@@ -672,7 +700,6 @@ void checkTimer() {
     	if (now - punishmentStart >= PUNISHMENT_DURATION) {
     	      punishmentState = PUNISH_STANDBY;
             punishmentOff();
-            digitalWriteFast(PUNISHMENT, LOW);
             if (debug)
                 Serial.println("Punishment finished");
     	}
@@ -784,11 +811,11 @@ void loop()
         checkTask();
         checkTreadmill();
         checkSync();
-        sendCOM();
     }
     else {
         checkLaser();
     }
     checkTimer();
     checkCOM();
+    sendCOM();
 }
