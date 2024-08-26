@@ -251,12 +251,12 @@ void startTrial()
 
     state = TRIALSTART;
     soundOn();
+    stopReward();
     cueTime = now;
     triallog.time = now;
     ++triallog.iTrial;
     previousTarget = vrlog.y;
     sendTrial = 1;
-
 }
 
 void endTrial()
@@ -280,7 +280,6 @@ void itiTrial(int success)
     state = ITI;
     soundOff();
     punishment(0);
-    stopReward();
     if (triallog.iTrial == 0)
         itiDuration = 5000000; // 5 second
     else
@@ -394,22 +393,24 @@ void checkSpeed() {
         iY = 0;
     }
 
-    if (speed >= speedThreshold) {
-        if (!isMoving) {
-            isMoving = true;
-            stopReward();
-            if (debug) {
-                Serial.print("Animals is moving, speed: ");
-                Serial.println(speed);
+    if (state == ITI) {
+        if (speed >= speedThreshold) {
+            if (!isMoving) {
+                isMoving = true;
+                stopReward();
+                if (debug) {
+                    Serial.print("Animals is moving, speed: ");
+                    Serial.println(speed);
+                }
             }
         }
-    }
-    else {
-        if (isMoving) {
-            isMoving = false;
-            nextReward();
-            if (debug) {
-                Serial.println("Animals stopped moving. Start rewarding...");
+        else {
+            if (isMoving) {
+                isMoving = false;
+                nextReward();
+                if (debug) {
+                    Serial.println("Animals stopped moving. Start rewarding...");
+                }
             }
         }
     }
