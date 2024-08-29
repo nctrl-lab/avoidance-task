@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
     QCheckBox,
+    QGridLayout,
     QFormLayout,
     QLabel,
     QLineEdit,
@@ -82,6 +83,12 @@ class WorkerThread(QThread):
                                 data = self.serial.read(6)
                                 t = struct.unpack('<I', data[:4])[0]
                                 self.dataReceived.emit(','.join(map(str,[cmd, t])))
+                            
+                            # reward
+                            elif (cmd < 90):
+                                data = self.serial.read(4)
+                                t = struct.unpack('<I', data[:4])[0]
+                                self.dataReceived.emit(','.join(map(str,[cmd, t])))
 
 
                             elif (cmd == 99):
@@ -115,96 +122,86 @@ class MainWindow(QMainWindow):
         layout_lower = QVBoxLayout()
 
         layout_control = QVBoxLayout()
-        layout_setup = QFormLayout()
-        layout_result = QFormLayout()
+        layout_setup = QVBoxLayout()
+        layout_result = QGridLayout()
 
         # layout_control
-
-        self.start_btn = QPushButton("Start")
-        self.start_btn.setCheckable(True)
-        self.start_btn.setEnabled(False)
-        self.start_btn.toggled.connect(self.start)
-        self.start_btn.setMinimumSize(150, 40)
-
-        self.laser_btn = QPushButton("Laser")
-        self.laser_btn.setCheckable(True)
-        self.laser_btn.setEnabled(False)
-        self.laser_btn.clicked.connect(self.laser)
-        self.laser_btn.setMinimumSize(150, 30)
-
-        self.punishment_btn = QPushButton("Punishment")
-        self.punishment_btn.setEnabled(False)
-        self.punishment_btn.clicked.connect(self.punishment)
-        self.punishment_btn.setMinimumSize(150, 20)
-        self.debug = QCheckBox('Debug mode')
-
-        layout_serial = QHBoxLayout()
-        self.serial_port = QLineEdit("/dev/ttyACM0")
-
-        self.serial_btn = QPushButton("Connect")
-        self.serial_btn.setCheckable(True)
-        self.serial_btn.toggled.connect(self.serial_start)
-        self.serial_btn.setMinimumSize(150, 40)
-
-        layout_serial.addWidget(QLabel("Serial port"))
-        layout_serial.addWidget(self.serial_port)
-
-        layout_control.addWidget(self.start_btn)
-        layout_control.addStretch()
-        layout_control.addWidget(self.laser_btn)
-        layout_control.addStretch()
-        layout_control.addWidget(self.punishment_btn)
-        layout_control.addStretch()
-        layout_control.addWidget(self.debug)
-        layout_control.addLayout(layout_serial)
-        layout_control.addWidget(self.serial_btn)
-        layout_control.setSpacing(10)
+        self.setup_control_layout(layout_control)
 
         # layout_setup
-
-        self.mouse = QSpinBox()
-        self.mouse.setRange(1, 100)
-        self.mouse.setValue(1)
-        self.mouse.setMinimumSize(150, 80)
-
-        self.n_trial = QSpinBox()
-        self.n_trial.setRange(10, 1000)
-        self.n_trial.setValue(200)
-        self.n_trial.setSingleStep(20)
-        self.n_trial.setMinimumSize(150, 80)
-
-        # self.task = QComboBox()
-        # self.task.addItems(["Nogo", "Go", "Go/Nogo"])
-
-        layout_setup.addRow('Mouse num', self.mouse)
-        layout_setup.addRow('n trial', self.n_trial)
-        # layout_setup.addRow('Task', self.task)
-        layout_setup.setSpacing(10)
+        self.setup_setup_layout(layout_setup)
 
         # layout_result
-
-        self.i_state = QSpinBox()
-        self.i_state.setReadOnly(True)
-        self.i_trial = QSpinBox()
-        self.i_trial.setReadOnly(True)
-        self.i_correct = QSpinBox()
-        self.i_correct.setReadOnly(True)
-        self.text = QTextEdit()
-        self.text.setReadOnly(True)
-        self.text.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self.text.setFontPointSize(10)
-
-        layout_result.addRow('i state', self.i_state)
-        layout_result.addRow('i trial', self.i_trial)
-        layout_result.addRow('i correct', self.i_correct)
-        layout_result.addRow(self.text)
-        layout_result.setSpacing(10)
+        self.setup_result_layout(layout_result)
 
         layout_upper.addLayout(layout_control, 1)
         layout_upper.addLayout(layout_setup, 1)
         layout_upper.addLayout(layout_result, 1)
 
         # layout_lower: figure
+        self.setup_figure(layout_lower)
+
+        layout_main.addLayout(layout_upper, 2)
+        layout_main.addLayout(layout_lower, 1)
+
+        widget = QWidget()
+        widget.setLayout(layout_main)
+
+        self.set_styles()
+
+        # 7 inch LCD display (800 x 480)
+        self.setGeometry(0, 80, 800, 420)
+        # self.showMaximized()
+        self.setCentralWidget(widget)
+
+    def setup_control_layout(self, layout):
+        self.start_btn = self.create_button("Start", True, False, self.start, (120, 50))
+        self.laser_btn = self.create_button("Laser", True, False, self.laser, (120, 50))
+        self.punishment_btn = self.create_button("Punishment", False, False, self.punishment, (60, 50))
+        self.reward_btn = self.create_button("Reward", False, False, self.reward, (60, 50))
+
+        layout.addWidget(self.start_btn)
+        layout.addWidget(self.laser_btn)
+        layout_lower = QHBoxLayout()
+        layout_lower.addWidget(self.punishment_btn) 
+        layout_lower.addWidget(self.reward_btn)
+        layout.addLayout(layout_lower)
+
+    def setup_setup_layout(self, layout):
+        self.mouse = self.create_spinbox(1, 100, 1, (120, 40))
+        self.n_trial = self.create_spinbox(10, 1000, 200, (120, 40), 20)
+        self.serial_port = QLineEdit("/dev/ttyACM0")
+        self.serial_btn = self.create_button("Connect", True, True, self.serial_start, (120, 40))
+        self.debug = QCheckBox('Debug mode')
+
+        layout_setup = QFormLayout()
+        layout_setup.addRow('Mouse num', self.mouse)
+        layout_setup.addRow('n trial', self.n_trial)
+        layout.addLayout(layout_setup)
+        layout.addWidget(self.debug)
+        layout.addWidget(self.serial_port)
+        layout.addWidget(self.serial_btn)
+
+    def setup_result_layout(self, layout):
+        self.i_state = self.create_readonly_spinbox()
+        self.i_trial = self.create_readonly_spinbox()
+        self.i_correct = self.create_readonly_spinbox()
+        self.i_reward = self.create_readonly_spinbox()
+        self.text = self.create_text_edit()
+
+        layout_left = QFormLayout()
+        layout_left.addRow('i state', self.i_state)
+        layout_left.addRow('i trial', self.i_trial)
+
+        layout_right = QFormLayout()
+        layout_right.addRow('i correct', self.i_correct)
+        layout_right.addRow('i reward', self.i_reward)
+
+        layout.addLayout(layout_left, 0, 0)
+        layout.addLayout(layout_right, 0, 1)
+        layout.addWidget(self.text, 1, 0, 1, 2)
+
+    def setup_figure(self, layout):
         canvas = FigureCanvas(Figure())
         self.ax = canvas.figure.subplots()
         self.speed_idx = 0
@@ -214,15 +211,37 @@ class MainWindow(QMainWindow):
         self.ax.set_xlim([0, 5])
         self.ax.set_ylim([0, 40])
         self.ax.set_ylabel('Speed')
+        layout.addWidget(canvas)
 
-        layout_lower.addWidget(canvas)
+    def create_button(self, text, checkable, enabled, connect_func, size):
+        btn = QPushButton(text)
+        btn.setCheckable(checkable)
+        btn.setEnabled(enabled)
+        btn.clicked.connect(connect_func)
+        btn.setMinimumSize(*size)
+        return btn
 
-        layout_main.addLayout(layout_upper, 3)
-        layout_main.addLayout(layout_lower, 1)
+    def create_spinbox(self, min_val, max_val, value, size, step=1):
+        spinbox = QSpinBox()
+        spinbox.setRange(min_val, max_val)
+        spinbox.setValue(value)
+        spinbox.setMinimumSize(*size)
+        spinbox.setSingleStep(step)
+        return spinbox
 
-        widget = QWidget()
-        widget.setLayout(layout_main)
+    def create_readonly_spinbox(self):
+        spinbox = QSpinBox()
+        spinbox.setReadOnly(True)
+        return spinbox
 
+    def create_text_edit(self):
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        text_edit.setFontPointSize(10)
+        return text_edit
+
+    def set_styles(self):
         self.setStyleSheet("""
             QSpinBox {
                 qproperty-alignment: AlignCenter;
@@ -237,10 +256,7 @@ class MainWindow(QMainWindow):
                 text-align: center;
             }
         """)
-        self.setGeometry(0, 80, 800, 420)
-        self.showMaximized()
-        self.setCentralWidget(widget)
-    
+
     def reset_plot(self):
         self.speed_idx = 0
         self.speed[:] = 0 # 5 seconds
@@ -258,6 +274,7 @@ class MainWindow(QMainWindow):
                     self.start_btn.setEnabled(True)
                     self.laser_btn.setEnabled(True)
                     self.punishment_btn.setEnabled(True)
+                    self.reward_btn.setEnabled(True)
                     self.serial_btn.setText('Disconnect')
                     self.serial_btn.setStyleSheet("background-color: yellow")
 
@@ -288,6 +305,7 @@ class MainWindow(QMainWindow):
 
                     self.start_btn.setEnabled(False)
                     self.punishment_btn.setEnabled(False)
+                    self.reward_btn.setEnabled(False)
                     self.serial_btn.setText('Connect')
                     self.serial_btn.setStyleSheet("background-color: light gray")
                     print('Serial disconnected')
@@ -319,6 +337,7 @@ class MainWindow(QMainWindow):
             self.i_trial.setValue(0)
             self.i_state.setValue(0)
             self.i_correct.setvalue(0)
+            self.i_reward.setValue(0)
             self.laser_btn.setChecked(False)
 
         else:
@@ -367,6 +386,9 @@ class MainWindow(QMainWindow):
     
     def punishment(self):
         self.serial.write(b'p')
+        
+    def reward(self):
+        self.serial.write(b'r')
         
     def closeEvent(self, e):
         print('Closing ...')
@@ -432,6 +454,12 @@ class MainWindow(QMainWindow):
             if (cmd == 79):
                 self.text.append("Tagging finished")
 
+        elif (cmd >= 80 and cmd < 90):
+            t = float(msgs[0]) / 1e6
+            self.i_reward.setValue(self.i_reward.value() + 1)
+            msg = "{:.1f}: reward".format(t)
+            self.text.append(msg)
+
         elif (cmd == 99):
             msg = "Task finished"
             self.text.append(msg)
@@ -444,7 +472,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     font = QFont()
-    font.setPointSize(12)
+    font.setPointSize(10)
     app.setFont(font)
 
     window = MainWindow()

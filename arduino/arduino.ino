@@ -140,7 +140,7 @@ unsigned long cueDuration = 5000000; // 5 seconds
 uint16_t rewardState = REWARD_DISABLED;
 
 unsigned long rewardTime, rewardInterval;
-unsigned long rewardDuration = 80000; // This decides the reward amount
+unsigned long rewardDuration = 73000; // This decides the reward amount (73 ms = 20 uL water)
 const unsigned long REWARD_INTERVAL_MIN = 5000000; // 5 seconds
 const unsigned long REWARD_INTERVAL_MEAN = 15000000; // 15 seconds
 
@@ -172,7 +172,7 @@ int iPulse = 0;          // Current pulse count
 
 // packet related
 char cCOM;
-uint8_t sendVR, sendSync, sendTrial, sendLaser;
+uint8_t sendVR, sendSync, sendTrial, sendLaser, sendReward;
 
 #define TRIAL_PACKET_SIZE 6
 struct trialinfo
@@ -445,6 +445,7 @@ void startReward() {
     rewardState = REWARD_ON;
     rewardTime = now;
     rewardOn();
+    sendReward = 1;
 
     if (debug) {
         Serial.println("Rewarding");
@@ -617,9 +618,13 @@ void sendCOM()
         packetCOM(60+sendTrial);
         sendTrial = 0;
     }
-    if (sendLaser) { // 61: laser on, 62: laser off, 69: laser finished
-        packetCOM(69+sendLaser);
+    if (sendLaser) { // 71: laser on, 72: laser off, 79: laser finished
+        packetCOM(70+sendLaser);
         sendLaser = 0;
+    }
+    if (sendReward) { // 81: reward on
+        packetCOM(80+sendReward);
+        sendReward = 0;
     }
 }
 
@@ -662,6 +667,11 @@ void packetCOM(uint8_t command)
             Serial.print(",iPulse:");
             Serial.println(iPulse);
         }
+        else if (command < 90) {
+            Serial.print(command);
+            Serial.print(" rewardTime:");
+            Serial.println(rewardTime);
+        }
     }
     else {
         Serial.write(255);     // start string
@@ -681,6 +691,8 @@ void packetCOM(uint8_t command)
             Serial.write((uint8_t *)&triallog, TRIAL_PACKET_SIZE);
         else if (command < 80) // 70-79: laser message
             Serial.write((uint8_t *)&laserTime, 4);
+        else if (command < 90) // 80-89: reward message
+            Serial.write((uint8_t *)&rewardTime, 4);
         Serial.write(13);
         Serial.write(10); // end character (line feed)
     }
