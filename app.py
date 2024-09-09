@@ -59,7 +59,7 @@ class WorkerThread(QThread):
                             if (cmd < 40):
                                 data = self.serial.read(10)
                                 t = struct.unpack('<I', data[:4])[0]
-                                y = struct.unpack('<H', data[4:6])[0]
+                                y = struct.unpack('<I', data[4:8])[0]
 
                                 self.dataReceived.emit(','.join(map(str, [cmd, t, y])))
 

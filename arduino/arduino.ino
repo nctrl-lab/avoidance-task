@@ -40,7 +40,7 @@
 //   2: Encoder B
 //   3: Sound for NI 
 //   4: Air
-//   5: Water
+//  16: Water
 //  14: Laser pin
 
 // Audio shield related (do not use)
@@ -63,7 +63,7 @@
 #define ENCB            2
 #define SOUND           3
 #define AIR             4
-#define WATER           5
+#define WATER           16
 #define LASER           14
 
 #define syncOn()        digitalWriteFast(SYNC, HIGH);
