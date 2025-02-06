@@ -170,6 +170,9 @@ class MainWindow(QMainWindow):
     def setup_setup_layout(self, layout):
         self.mouse = self.create_spinbox(1, 100, 1, (120, 40))
         self.n_trial = self.create_spinbox(10, 1000, 200, (120, 40), 20)
+        self.reward_check = QCheckBox('Reward')
+        self.reward_check.setChecked(True)
+        self.reward_duration = self.create_spinbox(0, 200, 73, (120, 25))
         self.serial_port = QLineEdit("/dev/ttyACM0")
         self.serial_btn = self.create_button("Connect", True, True, self.serial_start, (120, 40))
         self.debug = QCheckBox('Debug mode')
@@ -177,6 +180,8 @@ class MainWindow(QMainWindow):
         layout_setup = QFormLayout()
         layout_setup.addRow('Mouse num', self.mouse)
         layout_setup.addRow('n trial', self.n_trial)
+        layout_setup.addRow('Reward', self.reward_check)
+        layout_setup.addRow('Reward duration', self.reward_duration)
         layout.addLayout(layout_setup)
         layout.addWidget(self.debug)
         layout.addWidget(self.serial_port)
@@ -330,6 +335,12 @@ class MainWindow(QMainWindow):
                 self.serial.write(b'd')
             else:
                 self.serial.write(b'D')
+
+            if self.reward_check.checkState():
+                self.serial.write(("w" + str(self.reward_duration.value())).encode())
+            else:
+                self.serial.write(b'W')
+
             self.serial.write(b's')
             self.start_btn.setText('End')
             self.start_btn.setStyleSheet("background-color: green")
