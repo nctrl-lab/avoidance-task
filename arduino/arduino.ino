@@ -162,10 +162,10 @@ const unsigned long PUNISHMENT_DURATION = 5000000; // 5 seconds
 int laserState = LASER_DONE;  // Current state
 
 const unsigned long LASER_DURATION = 5000;            // Duration of each laser pulse (5 ms)
-const unsigned long LASER_INTERVAL_MIN = 500000;      // Minimum inter-pulse interval (0.5 s)
-const unsigned long LASER_INTERVAL_MEAN = 1000000;    // Mean inter-pulse interval (1 s)
-unsigned long laserInterval;                          // Current inter-pulse interval (set dynamically)
+const unsigned long laserInterval = 495000;           // Current inter-pulse interval (2 Hz)
 unsigned long laserTime;
+// const unsigned long LASER_INTERVAL_MIN = 500000;      // Minimum inter-pulse interval (0.5 s)
+// const unsigned long LASER_INTERVAL_MEAN = 1000000;    // Mean inter-pulse interval (1 s)
 
 int N_PULSE = 300;       // Total number of pulses in a sequence
 int iPulse = 0;          // Current pulse count
@@ -786,7 +786,7 @@ void checkLaser() {
                 laserState = LASER_DONE;
             } else {
                 sendLaser = 1;
-                laserInterval = getInterval(LASER_INTERVAL_MIN, LASER_INTERVAL_MEAN);
+                // laserInterval = getInterval(LASER_INTERVAL_MIN, LASER_INTERVAL_MEAN);
             }
         }
     }
@@ -800,9 +800,9 @@ void checkLaser() {
     }
 }
 
-unsigned long getInterval(unsigned long interval_min, unsigned long interval_mean) {
-    return -logf(((float)random(500, 10001)/10000)) * (interval_mean - interval_min) + interval_min;
-}
+// unsigned long getInterval(unsigned long interval_min, unsigned long interval_mean) {
+//     return -logf(((float)random(500, 10001)/10000)) * (interval_mean - interval_min) + interval_min;
+// }
 
 
 // =====================
