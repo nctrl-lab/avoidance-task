@@ -800,9 +800,9 @@ void checkLaser() {
     }
 }
 
-// unsigned long getInterval(unsigned long interval_min, unsigned long interval_mean) {
-//     return -logf(((float)random(500, 10001)/10000)) * (interval_mean - interval_min) + interval_min;
-// }
+unsigned long getInterval(unsigned long interval_min, unsigned long interval_mean) {
+    return -logf(((float)random(500, 10001)/10000)) * (interval_mean - interval_min) + interval_min;
+}
 
 
 // =====================
