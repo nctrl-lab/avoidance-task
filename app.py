@@ -347,13 +347,15 @@ class MainWindow(QMainWindow):
 
             self.i_trial.setValue(0)
             self.i_state.setValue(0)
-            self.i_correct.setvalue(0)
+            self.i_correct.setValue(0)
             self.i_reward.setValue(0)
             self.laser_btn.setChecked(False)
 
         else:
             # end task
-            self.serial.write(b'e')
+            # NOTE: if you want to stop the task immediately, use 'f'
+            #       if you want to stop the task after the current trial, use 'e'
+            self.serial.write(b'f')
             self.start_btn.setText('Start')
             self.start_btn.setStyleSheet("background-color: light gray")
 
